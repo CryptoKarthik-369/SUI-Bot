@@ -1,0 +1,341 @@
+// ============================================================
+// SUI/USDT — SMC Multi-Timeframe Bot  |  Pine Script v6
+// Strategy: 1D Direction → 1H Key Levels → 5M Entry
+// Alerts fire JSON webhooks → server → web dashboard
+// ============================================================
+//@version=6
+indicator("SUI SMC Bot [1D·1H·5M]", overlay=true, max_bars_back=500, max_lines_count=50, max_labels_count=50, max_boxes_count=50)
+
+// ─────────────────────────────────────────────
+// INPUTS  (v6: input.source removed, color hex needs quotes)
+// ─────────────────────────────────────────────
+grp_tf      = "Timeframe Settings"
+tf_daily    = input.timeframe("D",   "Daily TF (Direction)",  group=grp_tf)
+tf_hourly   = input.timeframe("60",  "1H TF (Key Levels)",    group=grp_tf)
+
+grp_ob      = "Order Block Settings"
+ob_lookback = input.int(10, "OB Lookback Bars", minval=3, maxval=50, group=grp_ob)
+ob_bull_col = input.color(color.new(#00d4a0, 75), "Bullish OB Color", group=grp_ob)
+ob_bear_col = input.color(color.new(#ff4e6a, 75), "Bearish OB Color", group=grp_ob)
+
+grp_fvg     = "Fair Value Gap"
+show_fvg    = input.bool(true, "Show FVG", group=grp_fvg)
+fvg_bcol    = input.color(color.new(#00d4a0, 88), "Bull FVG Color", group=grp_fvg)
+fvg_scol    = input.color(color.new(#ff4e6a, 88), "Bear FVG Color", group=grp_fvg)
+
+grp_alert   = "Alert / Webhook"
+show_labels = input.bool(true,  "Show Signal Labels",  group=grp_alert)
+rr_ratio    = input.float(3.0,  "Minimum R:R", minval=1.0, step=0.5, group=grp_alert)
+
+// ─────────────────────────────────────────────
+// v6: request.security — no lookahead param needed for historical
+// Use gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off (default)
+// To avoid repainting use [1] offset inside the security call
+// ─────────────────────────────────────────────
+
+// ── 1D DATA ──────────────────────────────────
+d_close = request.security(syminfo.tickerid, tf_daily, close[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+d_high  = request.security(syminfo.tickerid, tf_daily, high[1],  gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+d_low   = request.security(syminfo.tickerid, tf_daily, low[1],   gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+d_open  = request.security(syminfo.tickerid, tf_daily, open[1],  gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+d_hh5   = request.security(syminfo.tickerid, tf_daily, ta.highest(high, 5)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+d_ll5   = request.security(syminfo.tickerid, tf_daily, ta.lowest(low,  5)[1],  gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+d_hh20  = request.security(syminfo.tickerid, tf_daily, ta.highest(high,20)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+d_ll20  = request.security(syminfo.tickerid, tf_daily, ta.lowest(low, 20)[1],  gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+// 1D OB — last bearish candle before bullish impulse (for demand OB)
+d_ob_top = request.security(syminfo.tickerid, tf_daily,
+     ta.valuewhen(close > open and close[1] < open[1], open[1], 0),
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+d_ob_bot = request.security(syminfo.tickerid, tf_daily,
+     ta.valuewhen(close > open and close[1] < open[1], low[1],  0),
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+// 1D Structure: BOS confirmed when close exceeds prior 5-bar swing
+d_bos_bull = d_close > d_hh5[1]
+d_bos_bear = d_close < d_ll5[1]
+d_bias     = d_bos_bull ? 1 : d_bos_bear ? -1 : 0
+
+// Premium / Discount (50% of daily range)
+d_range_mid = (d_hh20 + d_ll20) / 2
+d_premium   = d_close > d_range_mid
+d_discount  = d_close < d_range_mid
+
+// ── 1H DATA ──────────────────────────────────
+h_close = request.security(syminfo.tickerid, tf_hourly, close[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+h_high  = request.security(syminfo.tickerid, tf_hourly, high[1],  gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+h_low   = request.security(syminfo.tickerid, tf_hourly, low[1],   gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+h_open  = request.security(syminfo.tickerid, tf_hourly, open[1],  gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+h_hh    = request.security(syminfo.tickerid, tf_hourly, ta.highest(high, ob_lookback)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+h_ll    = request.security(syminfo.tickerid, tf_hourly, ta.lowest(low,   ob_lookback)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+// 1H Demand OB top/bot
+h_dem_top = request.security(syminfo.tickerid, tf_hourly,
+     ta.valuewhen(close > open and close[1] < open[1], open[1], 0),
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+h_dem_bot = request.security(syminfo.tickerid, tf_hourly,
+     ta.valuewhen(close > open and close[1] < open[1], low[1],  0),
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+// 1H Supply OB top/bot
+h_sup_top = request.security(syminfo.tickerid, tf_hourly,
+     ta.valuewhen(close < open and close[1] > open[1], high[1], 0),
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+h_sup_bot = request.security(syminfo.tickerid, tf_hourly,
+     ta.valuewhen(close < open and close[1] > open[1], open[1], 0),
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+// 1H BOS
+h_bos_bull = request.security(syminfo.tickerid, tf_hourly,
+     ta.crossover(close,  ta.highest(high, ob_lookback)[1]),
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+h_bos_bear = request.security(syminfo.tickerid, tf_hourly,
+     ta.crossunder(close, ta.lowest(low,   ob_lookback)[1]),
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+// 1H FVG (imbalance on 1H via security)
+h_fvg_bull = request.security(syminfo.tickerid, tf_hourly, low > high[2],  gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+h_fvg_bear = request.security(syminfo.tickerid, tf_hourly, high < low[2],  gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+h_bullish   = h_bos_bull and h_close >= h_dem_bot
+h_bearish   = h_bos_bear and h_close <= h_sup_top
+
+// ── 5M ENTRY TF (current chart) ──────────────
+// 5M OB
+bull_ob_top = ta.valuewhen(close > open and close[1] < open[1], open[1], 0)
+bull_ob_bot = ta.valuewhen(close > open and close[1] < open[1], low[1],  0)
+bear_ob_top = ta.valuewhen(close < open and close[1] > open[1], high[1], 0)
+bear_ob_bot = ta.valuewhen(close < open and close[1] > open[1], open[1], 0)
+
+// 5M FVG
+bull_fvg    = low  > high[2]
+bear_fvg    = high < low[2]
+
+// 5M Swing High/Low
+m5_sh = ta.pivothigh(high, 5, 5)
+m5_sl = ta.pivotlow( low,  5, 5)
+
+var float last_sh = na
+var float last_sl = na
+if not na(m5_sh)
+    last_sh := m5_sh
+if not na(m5_sl)
+    last_sl := m5_sl
+
+// 5M CHoCH
+choch_bull  = not na(last_sh) and ta.crossover( close, last_sh)
+choch_bear  = not na(last_sl) and ta.crossunder(close, last_sl)
+
+// 5M MSS (CHoCH + volume confirmation)
+vol_avg     = ta.sma(volume, 20)
+mss_bull    = choch_bull and close > open and volume > vol_avg * 1.2
+mss_bear    = choch_bear and close < open and volume > vol_avg * 1.2
+
+// Price inside 1H OB?
+in_dem_ob   = close >= h_dem_bot and close <= h_dem_top
+in_sup_ob   = close >= h_sup_bot and close <= h_sup_top
+
+// ─────────────────────────────────────────────
+// FULL SMC ENTRY CONDITIONS
+// ─────────────────────────────────────────────
+long_cond   = d_bias == 1  and h_bullish and in_dem_ob and (choch_bull or mss_bull)
+short_cond  = d_bias == -1 and h_bearish and in_sup_ob and (choch_bear or mss_bear)
+near_long   = d_bias == 1  and in_dem_ob and not choch_bull
+near_short  = d_bias == -1 and in_sup_ob and not choch_bear
+
+// ─────────────────────────────────────────────
+// RISK MANAGEMENT
+// ─────────────────────────────────────────────
+sl_long     = bull_ob_bot - ta.atr(14) * 0.3
+sl_short    = bear_ob_top + ta.atr(14) * 0.3
+risk_l      = math.abs(close - sl_long)
+risk_s      = math.abs(sl_short - close)
+tp1_long    = close + risk_l * 1.5
+tp2_long    = close + risk_l * rr_ratio
+tp1_short   = close - risk_s * 1.5
+tp2_short   = close - risk_s * rr_ratio
+
+// ─────────────────────────────────────────────
+// DRAW ORDER BLOCKS
+// ─────────────────────────────────────────────
+var box ob_bull_bx = na
+var box ob_bear_bx = na
+
+if long_cond
+    if not na(ob_bull_bx)
+        box.delete(ob_bull_bx)
+    ob_bull_bx := box.new(bar_index - 3, bull_ob_top, bar_index + 20,
+         bull_ob_bot,
+         border_color=color.new(#00d4a0, 10),
+         bgcolor=ob_bull_col, border_width=1)
+
+if short_cond
+    if not na(ob_bear_bx)
+        box.delete(ob_bear_bx)
+    ob_bear_bx := box.new(bar_index - 3, bear_ob_top, bar_index + 20,
+         bear_ob_bot,
+         border_color=color.new(#ff4e6a, 10),
+         bgcolor=ob_bear_col, border_width=1)
+
+// ─────────────────────────────────────────────
+// DRAW FVG
+// ─────────────────────────────────────────────
+if show_fvg and bull_fvg
+    box.new(bar_index - 2, low, bar_index + 12, high[2],
+         border_color=color.new(#00d4a0, 50), bgcolor=fvg_bcol, border_width=1)
+
+if show_fvg and bear_fvg
+    box.new(bar_index - 2, low[2], bar_index + 12, high,
+         border_color=color.new(#ff4e6a, 50), bgcolor=fvg_scol, border_width=1)
+
+// ─────────────────────────────────────────────
+// TP / SL LINES
+// ─────────────────────────────────────────────
+var line ln_sl  = na
+var line ln_tp1 = na
+var line ln_tp2 = na
+
+if long_cond
+    if not na(ln_sl)  line.delete(ln_sl)
+    if not na(ln_tp1) line.delete(ln_tp1)
+    if not na(ln_tp2) line.delete(ln_tp2)
+    ln_sl  := line.new(bar_index, sl_long,  bar_index + 40, sl_long,
+         color=color.new(#ff4e6a, 0), width=1, style=line.style_dashed)
+    ln_tp1 := line.new(bar_index, tp1_long, bar_index + 40, tp1_long,
+         color=color.new(#00d4a0, 0), width=1, style=line.style_dashed)
+    ln_tp2 := line.new(bar_index, tp2_long, bar_index + 40, tp2_long,
+         color=color.new(#00d4a0, 40), width=1, style=line.style_dotted)
+
+if short_cond
+    if not na(ln_sl)  line.delete(ln_sl)
+    if not na(ln_tp1) line.delete(ln_tp1)
+    if not na(ln_tp2) line.delete(ln_tp2)
+    ln_sl  := line.new(bar_index, sl_short,  bar_index + 40, sl_short,
+         color=color.new(#ff4e6a, 0), width=1, style=line.style_dashed)
+    ln_tp1 := line.new(bar_index, tp1_short, bar_index + 40, tp1_short,
+         color=color.new(#00d4a0, 0), width=1, style=line.style_dashed)
+    ln_tp2 := line.new(bar_index, tp2_short, bar_index + 40, tp2_short,
+         color=color.new(#00d4a0, 40), width=1, style=line.style_dotted)
+
+// ─────────────────────────────────────────────
+// SIGNAL SHAPES + LABELS
+// ─────────────────────────────────────────────
+plotshape(long_cond,  "LONG",       shape.triangleup,   location.belowbar, color.new(#00d4a0, 0), size=size.normal)
+plotshape(short_cond, "SHORT",      shape.triangledown, location.abovebar, color.new(#ff4e6a, 0), size=size.normal)
+plotshape(near_long,  "Watch Long", shape.circle,       location.belowbar, color.new(#ffb020, 40), size=size.tiny)
+plotshape(near_short, "Watch Short",shape.circle,       location.abovebar, color.new(#ffb020, 40), size=size.tiny)
+
+if show_labels and long_cond
+    label.new(bar_index, low - ta.atr(14) * 0.6,
+         "▲ LONG\n" + str.tostring(close, "#.####"),
+         style=label.style_label_up,
+         color=color.new(#00d4a0, 10),
+         textcolor=color.white, size=size.small)
+
+if show_labels and short_cond
+    label.new(bar_index, high + ta.atr(14) * 0.6,
+         "▼ SHORT\n" + str.tostring(close, "#.####"),
+         style=label.style_label_down,
+         color=color.new(#ff4e6a, 10),
+         textcolor=color.white, size=size.small)
+
+if show_labels and near_long
+    label.new(bar_index, low,
+         "⚡ WATCH LONG",
+         style=label.style_label_up,
+         color=color.new(#ffb020, 25),
+         textcolor=color.white, size=size.tiny)
+
+if show_labels and near_short
+    label.new(bar_index, high,
+         "⚡ WATCH SHORT",
+         style=label.style_label_down,
+         color=color.new(#ffb020, 25),
+         textcolor=color.white, size=size.tiny)
+
+// ─────────────────────────────────────────────
+// 1H OB LEVEL PLOTS (visible on 5M chart)
+// ─────────────────────────────────────────────
+plot(h_dem_top, "1H Demand OB Top", color=color.new(#00d4a0, 40), linewidth=1, style=plot.style_linebr)
+plot(h_dem_bot, "1H Demand OB Bot", color=color.new(#00d4a0, 40), linewidth=1, style=plot.style_linebr)
+plot(h_sup_top, "1H Supply OB Top", color=color.new(#ff4e6a, 40), linewidth=1, style=plot.style_linebr)
+plot(h_sup_bot, "1H Supply OB Bot", color=color.new(#ff4e6a, 40), linewidth=1, style=plot.style_linebr)
+plot(d_ob_top,  "1D OB Top",        color=color.new(#a78bfa, 40), linewidth=2, style=plot.style_linebr)
+plot(d_ob_bot,  "1D OB Bot",        color=color.new(#a78bfa, 40), linewidth=2, style=plot.style_linebr)
+plot(d_range_mid,"1D Mid (50%)",    color=color.new(#4a9eff, 60), linewidth=1, style=plot.style_circles)
+
+// ─────────────────────────────────────────────
+// INFO TABLE  (top-right overlay)
+// ─────────────────────────────────────────────
+var table tbl = table.new(position.top_right, 2, 9,
+     bgcolor=color.new(#0a0c0f, 5),
+     border_color=color.new(#1f2a3a, 0),
+     border_width=1, frame_color=color.new(#1f2a3a, 0), frame_width=1)
+
+if barstate.islast
+    bias_col  = d_bias == 1 ? color.new(#00d4a0,0) : d_bias == -1 ? color.new(#ff4e6a,0) : color.new(#ffb020,0)
+    bias_txt  = d_bias == 1 ? "BULLISH ▲" : d_bias == -1 ? "BEARISH ▼" : "NEUTRAL →"
+    zone_col  = d_premium ? color.new(#ff4e6a,0) : color.new(#00d4a0,0)
+    zone_txt  = d_premium ? "PREMIUM ▲" : "DISCOUNT ▼"
+    h_col     = h_bullish ? color.new(#00d4a0,0) : h_bearish ? color.new(#ff4e6a,0) : color.new(#ffb020,0)
+    h_txt     = h_bullish ? "DEMAND OB ▲" : h_bearish ? "SUPPLY OB ▼" : "RANGING"
+    m5_col    = mss_bull  ? color.new(#00d4a0,0) : choch_bull ? color.new(#00d4a0,30) : mss_bear ? color.new(#ff4e6a,0) : choch_bear ? color.new(#ff4e6a,30) : color.new(#ffb020,0)
+    m5_txt    = mss_bull  ? "MSS BULL ✓" : choch_bull ? "CHoCH BULL" : mss_bear ? "MSS BEAR ✓" : choch_bear ? "CHoCH BEAR" : "WATCHING..."
+    entry_col = long_cond ? color.new(#00d4a0,0) : short_cond ? color.new(#ff4e6a,0) : color.new(#4a5a70,0)
+    entry_txt = long_cond ? "LONG ▲ LIVE" : short_cond ? "SHORT ▼ LIVE" : near_long ? "WATCH LONG" : near_short ? "WATCH SHORT" : "—"
+
+    table.cell(tbl,0,0,"SUI SMC BOT v6",text_color=color.new(#8a9ab0,0),text_size=size.small,bgcolor=color.new(#0f1218,0),text_halign=text.align_center)
+    table.cell(tbl,1,0,str.tostring(close,"#.####"),text_color=color.white,text_size=size.small,bgcolor=color.new(#0f1218,0))
+    table.cell(tbl,0,1,"1D Bias",   text_color=color.new(#4a5a70,0),text_size=size.tiny)
+    table.cell(tbl,1,1,bias_txt,    text_color=bias_col,            text_size=size.tiny)
+    table.cell(tbl,0,2,"1D Zone",   text_color=color.new(#4a5a70,0),text_size=size.tiny)
+    table.cell(tbl,1,2,zone_txt,    text_color=zone_col,            text_size=size.tiny)
+    table.cell(tbl,0,3,"1D OB",     text_color=color.new(#4a5a70,0),text_size=size.tiny)
+    table.cell(tbl,1,3,str.tostring(d_ob_bot,"#.####")+" – "+str.tostring(d_ob_top,"#.####"),text_color=color.new(#a78bfa,0),text_size=size.tiny)
+    table.cell(tbl,0,4,"1H Zone",   text_color=color.new(#4a5a70,0),text_size=size.tiny)
+    table.cell(tbl,1,4,h_txt,       text_color=h_col,               text_size=size.tiny)
+    table.cell(tbl,0,5,"1H Dem OB", text_color=color.new(#4a5a70,0),text_size=size.tiny)
+    table.cell(tbl,1,5,str.tostring(h_dem_bot,"#.####")+" – "+str.tostring(h_dem_top,"#.####"),text_color=color.new(#00d4a0,0),text_size=size.tiny)
+    table.cell(tbl,0,6,"1H Sup OB", text_color=color.new(#4a5a70,0),text_size=size.tiny)
+    table.cell(tbl,1,6,str.tostring(h_sup_bot,"#.####")+" – "+str.tostring(h_sup_top,"#.####"),text_color=color.new(#ff4e6a,0),text_size=size.tiny)
+    table.cell(tbl,0,7,"5M Signal", text_color=color.new(#4a5a70,0),text_size=size.tiny)
+    table.cell(tbl,1,7,m5_txt,      text_color=m5_col,              text_size=size.tiny)
+    table.cell(tbl,0,8,"Entry",     text_color=color.new(#4a5a70,0),text_size=size.tiny)
+    table.cell(tbl,1,8,entry_txt,   text_color=entry_col,           text_size=size.tiny)
+
+// ─────────────────────────────────────────────
+// ALERT CONDITIONS  →  JSON Webhook Payloads
+// Paste webhook URL in TradingView alert:
+// https://your-server.com/webhook?secret=sui_smc_secret_2024
+// ─────────────────────────────────────────────
+alertcondition(long_cond,
+     "🟢 SMC LONG ENTRY",
+     '{"symbol":"SUIUSDT","action":"LONG","type":"ENTRY","tf":"5M","price":"{{close}}","sl":"{{plot("1H Demand OB Bot")}}","tp1":"{{plot("1H Supply OB Top")}}","tp2":"{{plot("1D OB Top")}}","1d_bias":"BULLISH","1d_ob_top":"{{plot("1D OB Top")}}","1d_ob_bot":"{{plot("1D OB Bot")}}","1h_dem_top":"{{plot("1H Demand OB Top")}}","1h_dem_bot":"{{plot("1H Demand OB Bot")}}","1h_sup_top":"{{plot("1H Supply OB Top")}}","1h_sup_bot":"{{plot("1H Supply OB Bot")}}","1h_ob":"DEMAND","5m_signal":"CHoCH_BULL","time":"{{timenow}}","bar":"{{bar_index}}"}')
+
+alertcondition(short_cond,
+     "🔴 SMC SHORT ENTRY",
+     '{"symbol":"SUIUSDT","action":"SHORT","type":"ENTRY","tf":"5M","price":"{{close}}","sl":"{{plot("1H Supply OB Top")}}","tp1":"{{plot("1H Demand OB Bot")}}","tp2":"{{plot("1D OB Bot")}}","1d_bias":"BEARISH","1d_ob_top":"{{plot("1D OB Top")}}","1d_ob_bot":"{{plot("1D OB Bot")}}","1h_dem_top":"{{plot("1H Demand OB Top")}}","1h_dem_bot":"{{plot("1H Demand OB Bot")}}","1h_sup_top":"{{plot("1H Supply OB Top")}}","1h_sup_bot":"{{plot("1H Supply OB Bot")}}","1h_ob":"SUPPLY","5m_signal":"CHoCH_BEAR","time":"{{timenow}}","bar":"{{bar_index}}"}')
+
+alertcondition(near_long,
+     "⚡ WATCH LONG (Near POI)",
+     '{"symbol":"SUIUSDT","action":"WATCH_LONG","type":"NEAR_ENTRY","price":"{{close}}","1d_bias":"BULLISH","1d_ob_top":"{{plot("1D OB Top")}}","1d_ob_bot":"{{plot("1D OB Bot")}}","1h_dem_top":"{{plot("1H Demand OB Top")}}","1h_dem_bot":"{{plot("1H Demand OB Bot")}}","1h_ob":"DEMAND","5m_signal":"PENDING","time":"{{timenow}}"}')
+
+alertcondition(near_short,
+     "⚡ WATCH SHORT (Near POI)",
+     '{"symbol":"SUIUSDT","action":"WATCH_SHORT","type":"NEAR_ENTRY","price":"{{close}}","1d_bias":"BEARISH","1d_ob_top":"{{plot("1D OB Top")}}","1d_ob_bot":"{{plot("1D OB Bot")}}","1h_sup_top":"{{plot("1H Supply OB Top")}}","1h_sup_bot":"{{plot("1H Supply OB Bot")}}","1h_ob":"SUPPLY","5m_signal":"PENDING","time":"{{timenow}}"}')
+
+alertcondition(mss_bull,
+     "💎 MSS BULL CONFIRMED",
+     '{"symbol":"SUIUSDT","action":"LONG","type":"MSS_CONFIRM","price":"{{close}}","signal":"MSS_BULL","1d_ob_top":"{{plot("1D OB Top")}}","1h_dem_bot":"{{plot("1H Demand OB Bot")}}","time":"{{timenow}}"}')
+
+alertcondition(mss_bear,
+     "💎 MSS BEAR CONFIRMED",
+     '{"symbol":"SUIUSDT","action":"SHORT","type":"MSS_CONFIRM","price":"{{close}}","signal":"MSS_BEAR","1d_ob_bot":"{{plot("1D OB Bot")}}","1h_sup_top":"{{plot("1H Supply OB Top")}}","time":"{{timenow}}"}')
+
+alertcondition(h_bos_bull, "📊 1H BOS BULL",
+     '{"symbol":"SUIUSDT","action":"INFO","type":"BOS","tf":"1H","direction":"BULL","price":"{{close}}","time":"{{timenow}}"}')
+
+alertcondition(h_bos_bear, "📊 1H BOS BEAR",
+     '{"symbol":"SUIUSDT","action":"INFO","type":"BOS","tf":"1H","direction":"BEAR","price":"{{close}}","time":"{{timenow}}"}')

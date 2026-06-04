@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>SUI SMC Bot</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+/* ═══════════════════════════════════════════
+   RESET + VARIABLES
+═══════════════════════════════════════════ */
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#070a0d;--bg2:#0c1018;--bg3:#111620;--bg4:#16202e;--bg5:#1c2838;
+  --b1:#1c2838;--b2:#253347;--b3:#2e3f56;
+  --t1:#dde8f2;--t2:#7d94ad;--t3:#445566;
+  --bull:#00e5a8;--bull3:rgba(0,229,168,.12);
+  --bear:#ff3d5a;--bear3:rgba(255,61,90,.12);
+  --warn:#f5a623;--warn3:rgba(245,166,35,.12);
+  --info:#4a9eff;--info3:rgba(74,158,255,.1);
+  --purple:#a78bfa;--purple3:rgba(167,139,250,.1);
+  --font:'Syne',sans-serif;--mono:'JetBrains Mono',monospace;
+  --r4:4px;--r6:6px;--r8:8px;--r12:12px;
+  --topbar-h:50px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+html{height:100%;-webkit-text-size-adjust:100%}
+body{height:100%;background:var(--bg);color:var(--t1);font-family:var(--font);font-size:14px;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--b3);border-radius:2px}
+.hidden{display:none!important}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes bk{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes fadein{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@keyframes flash{0%{background:rgba(0,229,168,.15)}100%{background:transparent}}
+@keyframes toast-in{from{transform:translateY(-12px);opacity:0}to{transform:none;opacity:1}}
+@keyframes ticker{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+@keyframes sheet-up{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes overlay-in{from{opacity:0}to{opacity:1}}
+.blink{animation:bk .8s step-end infinite}
+
+/* ═══════════════════════════════════════════
+   LAYOUT — MOBILE FIRST
+═══════════════════════════════════════════ */
+.app{display:flex;flex-direction:column;min-height:100dvh;min-height:100vh}
+
+/* ── TOP BAR ── */
+.topbar{
+  background:var(--bg2);border-bottom:1px solid var(--b1);
+  padding:0 12px;height:var(--topbar-h);
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:200;gap:8px;flex-shrink:0;
+}
+.logo{display:flex;align-items:center;gap:7px}
+.logo-mark{
+  width:26px;height:26px;background:var(--bull3);
+  border:1px solid rgba(0,229,168,.3);border-radius:var(--r6);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:8px;font-weight:700;color:var(--bull)
+}
+.logo-text{font-size:12px;font-weight:700;line-height:1.2}
+.logo-sub{font-size:7px;color:var(--t3);font-family:var(--mono)}
+.price-block{display:flex;align-items:baseline;gap:5px;flex:1;justify-content:center}
+#topPrice{font-family:var(--mono);font-size:18px;font-weight:700;transition:color .3s;line-height:1}
+.pchg{font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:var(--r4)}
+.topbar-right{display:flex;align-items:center;gap:6px}
+.icon-btn{
+  width:34px;height:34px;border-radius:var(--r6);border:1px solid var(--b2);
+  background:transparent;color:var(--t2);font-size:16px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0;
+}
+.icon-btn:active{background:var(--b2)}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dot-g{background:var(--bull);box-shadow:0 0 6px var(--bull);animation:pulse 1.5s infinite}
+.dot-r{background:var(--bear)}
+.dot-y{background:var(--warn);animation:pulse 1s infinite}
+
+/* ── CONNECTION BANNER ── */
+.conn-banner{
+  padding:10px 12px;border-bottom:1px solid var(--b1);
+  animation:fadein .3s ease;flex-shrink:0;
+}
+.conn-banner.cb-offline   {background:rgba(255,61,90,.06); border-bottom-color:rgba(255,61,90,.2)}
+.conn-banner.cb-connecting{background:rgba(245,166,35,.06);border-bottom-color:rgba(245,166,35,.2)}
+.conn-banner.cb-online    {background:rgba(0,229,168,.05); border-bottom-color:rgba(0,229,168,.2)}
+.conn-banner.cb-demo      {background:rgba(245,166,35,.05);border-bottom-color:rgba(245,166,35,.15)}
+.cb-row1{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.cb-icon{font-size:16px;flex-shrink:0}
+.cb-title{font-size:11px;font-weight:600;flex:1}
+.cb-disc{font-size:9px;color:var(--t2);font-family:var(--mono);line-height:1.6}
+.cb-input-row{display:flex;gap:6px;align-items:center}
+.ws-input{
+  flex:1;min-width:0;background:var(--bg4);border:1px solid var(--b2);
+  border-radius:var(--r6);padding:9px 10px;color:var(--t1);
+  font-family:var(--mono);font-size:11px;outline:none;transition:.15s;
+  -webkit-appearance:none;
+}
+.ws-input:focus{border-color:var(--bull);box-shadow:0 0 0 2px rgba(0,229,168,.1)}
+.ws-input.inp-ok{border-color:var(--bull)}
+.cbtn{
+  padding:9px 14px;border-radius:var(--r6);border:none;cursor:pointer;
+  font-family:var(--font);font-size:11px;font-weight:600;transition:.2s;
+  white-space:nowrap;-webkit-appearance:none;
+}
+.cbtn:active{filter:brightness(.85)}
+.cbtn-primary{background:var(--bull);color:#000}
+.cbtn-ghost{background:transparent;color:var(--t2);border:1px solid var(--b2)}
+.cbtn-red{background:var(--bear3);color:var(--bear);border:1px solid rgba(255,61,90,.3)}
+
+/* ── WEBHOOK BANNER ── */
+.wh-banner{
+  background:rgba(0,229,168,.05);border-bottom:1px solid rgba(0,229,168,.2);
+  padding:8px 12px;flex-shrink:0;
+}
+.wh-row{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.wh-label{font-size:8px;color:var(--t3);font-family:var(--mono);letter-spacing:.8px;text-transform:uppercase;white-space:nowrap}
+.wh-url{
+  flex:1;min-width:0;font-family:var(--mono);font-size:10px;color:var(--bull);
+  background:var(--bg4);border:1px solid rgba(0,229,168,.2);border-radius:var(--r4);
+  padding:5px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;
+}
+.wh-url:active{background:rgba(0,229,168,.1)}
+.wh-copy{
+  padding:5px 10px;border-radius:var(--r4);border:1px solid rgba(0,229,168,.3);
+  background:var(--bull3);color:var(--bull);font-family:var(--mono);font-size:9px;
+  cursor:pointer;white-space:nowrap;flex-shrink:0;
+}
+.wh-copy:active{background:rgba(0,229,168,.25)}
+.wh-steps{display:flex;gap:8px;flex-wrap:wrap}
+.wh-step{font-size:8px;font-family:var(--mono);color:var(--t3)}
+.wh-step.done{color:var(--bull)}
+.wh-step.done::before{content:"✓ "}
+.wh-step.pend::before{content:"○ "}
+
+/* ── TICKER ── */
+.tickerbar{
+  background:var(--bg3);border-bottom:1px solid var(--b1);
+  height:26px;overflow:hidden;display:flex;align-items:center;flex-shrink:0;
+}
+.tick-inner{display:flex;gap:20px;white-space:nowrap;animation:ticker 28s linear infinite;padding:0 12px}
+.t-item{display:flex;gap:4px;font-size:9px;font-family:var(--mono);align-items:center}
+.t-lbl{color:var(--t3)}
+
+/* ── SCROLLABLE CONTENT ── */
+.content-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px;display:flex;flex-direction:column;gap:10px;padding-bottom:calc(10px + var(--safe-bottom))}
+
+/* ── CARDS ── */
+.card{background:var(--bg2);border:1px solid var(--b1);border-radius:var(--r8);padding:10px}
+.card-title{font-size:8px;letter-spacing:1.1px;text-transform:uppercase;color:var(--t3);font-family:var(--mono);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+
+/* ── TF GRID ── */
+.tf-grid{display:grid;grid-template-columns:1fr;gap:8px}
+.tf-card{background:var(--bg3);border:1px solid var(--b1);border-radius:var(--r8);padding:9px}
+.tf-card.tf-bull{border-color:rgba(0,229,168,.3)}
+.tf-card.tf-bear{border-color:rgba(255,61,90,.3)}
+.tf-card.tf-warn{border-color:rgba(245,166,35,.25)}
+.tf-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.tf-lbl{font-size:8px;font-family:var(--mono);letter-spacing:1px;text-transform:uppercase;color:var(--t3)}
+.badge{font-size:8px;font-family:var(--mono);padding:2px 6px;border-radius:20px}
+.b-bull{background:var(--bull3);color:var(--bull)}
+.b-bear{background:var(--bear3);color:var(--bear)}
+.b-warn{background:var(--warn3);color:var(--warn)}
+.b-info{background:var(--info3);color:var(--info)}
+.b-pu{background:var(--purple3);color:var(--purple)}
+.tf-dir{font-size:13px;font-weight:700;margin-bottom:5px}
+.tf-rows{display:flex;flex-direction:column;gap:3px}
+.tf-row{display:flex;justify-content:space-between;align-items:center;padding:4px 7px;border-radius:4px;background:var(--bg4);font-size:10px}
+.tf-row-k{color:var(--t3);font-family:var(--mono)}
+.tf-row-v{font-family:var(--mono);font-weight:500}
+
+/* ── TF TABS (horizontal scroll on mobile) ── */
+.tf-tab-row{display:flex;gap:5px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;margin-bottom:8px;scrollbar-width:none}
+.tf-tab-row::-webkit-scrollbar{display:none}
+.tf-tab-btn{
+  font-size:9px;font-family:var(--mono);padding:4px 12px;border-radius:20px;
+  border:1px solid var(--b2);cursor:pointer;color:var(--t2);background:transparent;
+  white-space:nowrap;flex-shrink:0;transition:.15s;
+}
+.tf-tab-btn.on{background:var(--b3);color:var(--t1);border-color:var(--b3)}
+.tf-tab-btn:active{background:var(--b2)}
+
+/* ── SIGNAL ── */
+.checklist{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px}
+.chk{background:var(--bg3);border:1px solid var(--b1);border-radius:var(--r6);padding:7px 8px}
+.chk.pass{border-color:rgba(0,229,168,.3)}
+.chk.fail{border-color:rgba(255,61,90,.3)}
+.chk.pend{border-color:rgba(245,166,35,.2)}
+.chk-k{font-size:8px;color:var(--t3);font-family:var(--mono);letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px}
+.chk-v{font-size:10px;font-weight:600;font-family:var(--mono)}
+.sig-banner{border-radius:var(--r6);padding:10px 12px;border:1px solid;display:flex;align-items:flex-start;gap:10px;transition:.4s}
+.sb-bull{background:var(--bull3);border-color:rgba(0,229,168,.3)}
+.sb-bear{background:var(--bear3);border-color:rgba(255,61,90,.3)}
+.sb-warn{background:var(--warn3);border-color:rgba(245,166,35,.2)}
+.sb-icon{font-size:20px;flex-shrink:0;margin-top:1px}
+.sb-body{flex:1;min-width:0}
+.sb-head{font-size:11px;font-weight:600;margin-bottom:3px;line-height:1.4}
+.sb-sub{font-size:9px;color:var(--t2);font-family:var(--mono);line-height:1.5;word-break:break-all}
+.sb-score{text-align:right;flex-shrink:0}
+.score-lbl{font-size:8px;color:var(--t3);font-family:var(--mono)}
+.score-val{font-size:20px;font-weight:700;font-family:var(--mono);line-height:1}
+.tpsl{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:7px}
+.tpsl-box{border-radius:var(--r6);padding:8px 10px;border:1px solid}
+.tp-b{background:rgba(0,229,168,.05);border-color:rgba(0,229,168,.2)}
+.sl-b{background:rgba(255,61,90,.05);border-color:rgba(255,61,90,.2)}
+.tpsl-row{display:flex;justify-content:space-between;align-items:center;margin-top:3px}
+.tpsl-k{font-size:8px;color:var(--t2);font-family:var(--mono)}
+.tpsl-v{font-size:11px;font-weight:600;font-family:var(--mono)}
+
+/* ── CHART ── */
+.chart-wrap{background:var(--bg2);border:1px solid var(--b1);border-radius:var(--r8);padding:10px}
+.chart-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+
+/* ── OB TABLE ── */
+.ob-list{display:flex;flex-direction:column;gap:3px}
+.ob-row{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:4px;background:var(--bg3);border-left:2px solid transparent}
+.ob-bull{border-left-color:var(--bull)}
+.ob-bear{border-left-color:var(--bear)}
+.ob-pu{border-left-color:var(--purple)}
+.ob-k{font-size:9px;color:var(--t2);font-family:var(--mono);width:68px;flex-shrink:0}
+.ob-v{font-family:var(--mono);font-size:10px;font-weight:500;flex:1}
+.ob-badge{font-size:8px;font-family:var(--mono);padding:1px 4px;border-radius:3px}
+
+/* ── STATS ── */
+.stats-row{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.stat-box{background:var(--bg3);border:1px solid var(--b1);border-radius:var(--r8);padding:9px 10px}
+.stat-lbl{font-size:8px;color:var(--t3);font-family:var(--mono);letter-spacing:.8px;text-transform:uppercase;margin-bottom:3px}
+.stat-num{font-size:18px;font-weight:700;font-family:var(--mono);line-height:1.1}
+.stat-sub{font-size:8px;color:var(--t2);font-family:var(--mono);margin-top:2px}
+
+/* ── ALERT FEED (in-page) ── */
+.alert-feed-wrap{background:var(--bg2);border:1px solid var(--b1);border-radius:var(--r8);overflow:hidden}
+.alert-feed-hdr{padding:9px 12px;border-bottom:1px solid var(--b1);font-size:9px;letter-spacing:1.1px;text-transform:uppercase;color:var(--t3);font-family:var(--mono);display:flex;justify-content:space-between;align-items:center}
+.alert-feed{max-height:280px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.alert-item{padding:9px 12px;border-bottom:1px solid var(--b1);transition:.15s}
+.alert-item:active{background:var(--bg3)}
+.alert-item.new{animation:flash .6s ease}
+.a-long .a-action{color:var(--bull)}
+.a-short .a-action{color:var(--bear)}
+.a-watch .a-action{color:var(--warn)}
+.a-info .a-action{color:var(--info)}
+.a-action{font-size:10px;font-weight:600;font-family:var(--mono)}
+.a-time{font-size:8px;color:var(--t3);font-family:var(--mono)}
+.a-price{font-size:13px;font-family:var(--mono);font-weight:600;margin:2px 0}
+.a-meta{font-size:8px;color:var(--t2);font-family:var(--mono);display:flex;gap:6px;flex-wrap:wrap}
+.empty-feed{padding:24px 16px;text-align:center;color:var(--t3);font-family:var(--mono);font-size:10px;line-height:2.2}
+
+/* ── TOAST ── */
+.toast-wrap{position:fixed;top:calc(var(--topbar-h) + 6px);left:12px;right:12px;z-index:999;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.toast{background:var(--bg3);border:1px solid var(--b2);border-radius:var(--r8);padding:10px 12px;pointer-events:auto;animation:toast-in .3s ease;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.toast.t-bull{border-left:3px solid var(--bull)}
+.toast.t-bear{border-left:3px solid var(--bear)}
+.toast.t-warn{border-left:3px solid var(--warn)}
+.toast.t-info{border-left:3px solid var(--info)}
+.toast-head{font-size:11px;font-weight:600;margin-bottom:2px}
+.toast-body{font-size:9px;color:var(--t2);font-family:var(--mono)}
+
+/* ── BOTTOM SHEET (mobile setup panel) ── */
+.sheet-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:300;animation:overlay-in .2s ease;backdrop-filter:blur(3px)}
+.bottom-sheet{
+  position:fixed;bottom:0;left:0;right:0;z-index:301;
+  background:var(--bg2);border-top:1px solid var(--b2);
+  border-radius:16px 16px 0 0;
+  max-height:90dvh;max-height:90vh;
+  overflow-y:auto;-webkit-overflow-scrolling:touch;
+  animation:sheet-up .3s cubic-bezier(.32,.72,0,1);
+  padding-bottom:calc(16px + var(--safe-bottom));
+}
+.sheet-handle{width:36px;height:4px;background:var(--b3);border-radius:2px;margin:10px auto 16px}
+.sheet-title{font-size:16px;font-weight:700;padding:0 16px 12px;border-bottom:1px solid var(--b1);display:flex;justify-content:space-between;align-items:center}
+.sheet-close{background:none;border:none;color:var(--t2);font-size:20px;cursor:pointer;padding:4px}
+.sheet-body{padding:16px}
+.step-card{background:var(--bg3);border:1px solid var(--b1);border-radius:var(--r8);padding:12px;margin-bottom:10px}
+.step-hdr{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.step-num{width:24px;height:24px;border-radius:50%;background:var(--bull3);border:1px solid rgba(0,229,168,.4);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--bull);flex-shrink:0}
+.step-title{font-size:12px;font-weight:600;color:var(--t1)}
+.step-body{font-size:10px;color:var(--t2);font-family:var(--mono);line-height:1.8}
+.step-body strong{color:var(--t1)}
+.step-cmd{
+  background:var(--bg4);border:1px solid var(--b1);border-radius:var(--r6);
+  padding:8px 10px;font-family:var(--mono);font-size:10px;color:var(--bull);
+  cursor:pointer;display:flex;justify-content:space-between;align-items:center;
+  margin-top:6px;-webkit-appearance:none;
+}
+.step-cmd:active{background:var(--bg5)}
+.step-cmd-copy{font-size:8px;color:var(--t3);flex-shrink:0;margin-left:8px}
+.step-url{background:var(--bg4);border:1px solid rgba(0,229,168,.2);border-radius:var(--r6);padding:8px 10px;font-family:var(--mono);font-size:9px;color:var(--info);margin-top:6px;word-break:break-all;line-height:1.6}
+.info-note{background:var(--bull3);border:1px solid rgba(0,229,168,.2);border-radius:var(--r6);padding:8px 10px;font-size:9px;font-family:var(--mono);color:var(--bull);margin-top:6px;line-height:1.7}
+.info-warn{background:var(--warn3);border:1px solid rgba(245,166,35,.2);border-radius:var(--r6);padding:8px 10px;font-size:9px;font-family:var(--mono);color:var(--warn);margin-top:6px;line-height:1.7}
+.sheet-input{width:100%;background:var(--bg4);border:1px solid var(--b2);border-radius:var(--r8);padding:12px 14px;color:var(--t1);font-family:var(--mono);font-size:12px;outline:none;margin-top:6px;-webkit-appearance:none;transition:.15s}
+.sheet-input:focus{border-color:var(--bull);box-shadow:0 0 0 2px rgba(0,229,168,.1)}
+.sheet-btn{width:100%;padding:13px;border-radius:var(--r8);border:none;cursor:pointer;font-family:var(--font);font-size:13px;font-weight:600;transition:.2s;margin-top:8px;-webkit-appearance:none}
+.sheet-btn:active{filter:brightness(.85)}
+.sheet-btn-primary{background:var(--bull);color:#000}
+.sheet-btn-ghost{background:transparent;color:var(--t2);border:1px solid var(--b2)}
+.current-wh{background:var(--bg3);border:1px solid var(--b1);border-radius:var(--r8);padding:12px;margin-top:10px}
+.current-wh-lbl{font-size:8px;color:var(--t3);font-family:var(--mono);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
+.current-wh-url{font-size:9px;font-family:var(--mono);color:var(--t2);word-break:break-all;line-height:1.6}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — TABLET+ (600px+)
+═══════════════════════════════════════════ */
+@media(min-width:600px){
+  .tf-grid{grid-template-columns:1fr 1fr 1fr}
+  .checklist{grid-template-columns:repeat(3,1fr)}
+  .stats-row{grid-template-columns:repeat(4,1fr)}
+  .alert-feed{max-height:340px}
+  .bottom-sheet{left:auto;right:0;top:0;bottom:auto;width:380px;max-height:100vh;border-radius:0 0 0 var(--r12);border-top:none;border-left:1px solid var(--b2);animation:none}
+  .sheet-handle{display:none}
+  .cb-disc{display:block}
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — DESKTOP (900px+)
+═══════════════════════════════════════════ */
+@media(min-width:900px){
+  .content-scroll{padding:12px}
+  .ws-input{font-size:10px}
+}
+</style>
+</head>
+<body>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<!-- ══════════════════════════════
+     APP
+══════════════════════════════ -->
+<div class="app">
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-mark">SUI</div>
+    <div>
+      <div class="logo-text">SMC <span style="color:var(--bull)">Bot</span></div>
+      <div class="logo-sub">LIVE · SMC</div>
+    </div>
+  </div>
+  <div class="price-block">
+    <span id="topPrice" style="color:var(--t1)">—</span>
+    <span id="topChg" class="pchg b-info">—</span>
+  </div>
+  <div class="topbar-right">
+    <span id="binStat" style="font-size:8px;font-family:var(--mono);color:var(--warn)">📡</span>
+    <div class="dot dot-r" id="connDot" title="Connection status"></div>
+    <button class="icon-btn" onclick="showSheet()" title="Setup &amp; Connect">⚙</button>
+  </div>
+</div>
+
+<!-- CONNECTION BANNER -->
+<div class="conn-banner cb-offline" id="connBanner">
+  <div class="cb-row1">
+    <span class="cb-icon" id="cbIcon">🔴</span>
+    <span class="cb-title" id="cbTitle">Not Connected</span>
+    <button class="cbtn cbtn-primary" style="font-size:10px;padding:6px 10px" onclick="showSheet()">Setup →</button>
+  </div>
+  <div class="cb-input-row">
+    <input class="ws-input" id="wsInput" type="text" inputmode="url"
+      placeholder="wss://xxxx.trycloudflare.com/ws"
+      onkeydown="if(event.key==='Enter'){this.blur();doConnect()}">
+    <button class="cbtn cbtn-primary" id="connBtn" onclick="doConnect()">Connect</button>
+  </div>
+</div>
+
+<!-- WEBHOOK BANNER (shows after tunnel URL received) -->
+<div class="wh-banner hidden" id="whBanner">
+  <div class="wh-row">
+    <span class="wh-label">TV Webhook</span>
+    <div class="wh-url" id="whUrl" onclick="copyText(this.textContent,'Webhook URL copied!')">—</div>
+    <button class="wh-copy" onclick="copyText(document.getElementById('whUrl').textContent,'Webhook URL copied!')">📋</button>
+  </div>
+  <div class="wh-steps" id="whSteps">
+    <span class="wh-step done">Server online</span>
+    <span class="wh-step pend" id="ws-step2">Dashboard OK</span>
+    <span class="wh-step pend" id="ws-step3">TV webhook set</span>
+    <span class="wh-step pend" id="ws-step4">Alert received</span>
+  </div>
+</div>
+
+<!-- TICKER -->
+<div class="tickerbar">
+  <div class="tick-inner">
+    <div class="t-item"><span class="t-lbl">PRICE</span><span id="tk-price" style="color:var(--t1)">—</span></div>
+    <div class="t-item"><span class="t-lbl">HIGH</span><span id="tk-high" style="color:var(--bull)">—</span></div>
+    <div class="t-item"><span class="t-lbl">LOW</span><span id="tk-low" style="color:var(--bear)">—</span></div>
+    <div class="t-item"><span class="t-lbl">VOL</span><span id="tk-vol" style="color:var(--warn)">—</span></div>
+    <div class="t-item"><span class="t-lbl">1D</span><span id="tk-bias" style="color:var(--t2)">—</span></div>
+    <div class="t-item"><span class="t-lbl">1H</span><span id="tk-zone" style="color:var(--t2)">—</span></div>
+    <div class="t-item"><span class="t-lbl">5M</span><span id="tk-sig" style="color:var(--warn)">WATCH</span></div>
+    <div class="t-item"><span class="t-lbl">ALERTS</span><span id="tk-alerts" style="color:var(--purple)">0</span></div>
+    <!-- loop -->
+    <div class="t-item"><span class="t-lbl">PRICE</span><span style="color:var(--t1)" id="tk-price2">—</span></div>
+    <div class="t-item"><span class="t-lbl">HIGH</span><span style="color:var(--bull)">—</span></div>
+    <div class="t-item"><span class="t-lbl">LOW</span><span style="color:var(--bear)">—</span></div>
+    <div class="t-item"><span class="t-lbl">VOL</span><span id="tk-vol2" style="color:var(--warn)">—</span></div>
+    <div class="t-item"><span class="t-lbl">1D</span><span id="tk-bias2" style="color:var(--t2)">—</span></div>
+    <div class="t-item"><span class="t-lbl">1H</span><span style="color:var(--t2)">—</span></div>
+    <div class="t-item"><span class="t-lbl">5M</span><span style="color:var(--warn)">WATCH</span></div>
+    <div class="t-item"><span class="t-lbl">ALERTS</span><span id="tk-alerts2" style="color:var(--purple)">0</span></div>
+  </div>
+</div>
+
+<!-- SCROLLABLE CONTENT -->
+<div class="content-scroll">
+
+  <!-- TF TAB SELECTOR (mobile friendly) -->
+  <div class="tf-tab-row" id="tfTabRow">
+    <button class="tf-tab-btn on" onclick="showTF('all',this)">All TF</button>
+    <button class="tf-tab-btn" onclick="showTF('1D',this)">1D Direction</button>
+    <button class="tf-tab-btn" onclick="showTF('1H',this)">1H Levels</button>
+    <button class="tf-tab-btn" onclick="showTF('5M',this)">5M Entry</button>
+  </div>
+
+  <!-- TF CARDS -->
+  <div class="tf-grid">
+    <div class="tf-card tf-bull" id="tf1D">
+      <div class="tf-head"><span class="tf-lbl">1D · Direction</span><span class="badge b-bull" id="tf1D-badge">—</span></div>
+      <div class="tf-dir" style="color:var(--bull)" id="tf1D-dir">— —</div>
+      <div class="tf-rows">
+        <div class="tf-row"><span class="tf-row-k">Structure</span><span class="tf-row-v" style="color:var(--bull)" id="d1-struct">—</span></div>
+        <div class="tf-row"><span class="tf-row-k">OB Top</span><span class="tf-row-v" style="color:var(--purple)" id="d1-ob-top">—</span></div>
+        <div class="tf-row"><span class="tf-row-k">OB Bot</span><span class="tf-row-v" style="color:var(--purple)" id="d1-ob-bot">—</span></div>
+        <div class="tf-row"><span class="tf-row-k">Zone</span><span class="tf-row-v" id="d1-zone" style="color:var(--bull)">—</span></div>
+        <div class="tf-row"><span class="tf-row-k">Bias</span><span class="tf-row-v" id="d1-bias" style="color:var(--bull)">—</span></div>
+      </div>
+    </div>
+    <div class="tf-card tf-warn" id="tf1H">
+      <div class="tf-head"><span class="tf-lbl">1H · Key Levels</span><span class="badge b-warn" id="tf1H-badge">—</span></div>
+      <div class="tf-dir" style="color:var(--warn)" id="tf1H-dir">— —</div>
+      <div class="tf-rows">
+        <div class="tf-row"><span class="tf-row-k">Dem Top</span><span class="tf-row-v" style="color:var(--bull)" id="h1-dem-top">—</span></div>
+        <div class="tf-row"><span class="tf-row-k">Dem Bot</span><span class="tf-row-v" style="color:var(--bull)" id="h1-dem-bot">—</span></div>
+        <div class="tf-row"><span class="tf-row-k">Sup Top</span><span class="tf-row-v" style="color:var(--bear)" id="h1-sup-top">—</span></div>
+        <div class="tf-row"><span class="tf-row-k">Sup Bot</span><span class="tf-row-v" style="color:var(--bear)" id="h1-sup-bot">—</span></div>
+        <div class="tf-row"><span class="tf-row-k">Zone</span><span class="tf-row-v" id="h1-zone-row" style="color:var(--warn)">—</span></div>
+      </div>
+    </div>
+    <div class="tf-card tf-warn" id="tf5M">
+      <div class="tf-head"><span class="tf-lbl">5M · Entry</span><span class="badge b-warn blink" id="tf5M-badge">WATCHING</span></div>
+      <div class="tf-dir" style="color:var(--warn)" id="tf5M-dir">→ AWAITING</div>
+      <div class="tf-rows">
+        <div class="tf-row"><span class="tf-row-k">Signal</span><span class="tf-row-v blink" style="color:var(--warn)" id="m5-sig">WATCHING</span></div>
+        <div class="tf-row"><span class="tf-row-k">CHoCH</span><span class="tf-row-v" style="color:var(--warn)" id="m5-choch">PENDING</span></div>
+        <div class="tf-row"><span class="tf-row-k">Entry</span><span class="tf-row-v" style="color:var(--warn)" id="m5-entry">—</span></div>
+        <div class="tf-row"><span class="tf-row-k">SL</span><span class="tf-row-v" style="color:var(--bear)" id="m5-sl">—</span></div>
+        <div class="tf-row"><span class="tf-row-k">Score</span><span class="tf-row-v" style="color:var(--warn)" id="m5-score">0/6</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHART -->
+  <div class="chart-wrap">
+    <div class="chart-hdr">
+      <span style="font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--t3);font-family:var(--mono)">SUI/USDT</span>
+      <div style="display:flex;gap:4px">
+        <button class="tf-tab-btn on" onclick="switchChart(this,'5M')" style="padding:3px 10px;border-radius:var(--r4)">5M</button>
+        <button class="tf-tab-btn"    onclick="switchChart(this,'1H')" style="padding:3px 10px;border-radius:var(--r4)">1H</button>
+        <button class="tf-tab-btn"    onclick="switchChart(this,'1D')" style="padding:3px 10px;border-radius:var(--r4)">1D</button>
+      </div>
+    </div>
+    <div style="position:relative;height:160px"><canvas id="priceChart"></canvas></div>
+  </div>
+
+  <!-- SIGNAL ENGINE -->
+  <div class="card">
+    <div class="card-title">
+      <span>Signal Engine · Checklist</span>
+      <span id="sigStatus" style="color:var(--warn);font-size:8px;font-family:var(--mono)">⟳ MONITORING</span>
+    </div>
+    <div class="checklist">
+      <div class="chk pend" id="chk-1d"><div class="chk-k">1D Bias</div><div class="chk-v" style="color:var(--warn)" id="chk-1d-v">—</div></div>
+      <div class="chk pend" id="chk-1h"><div class="chk-k">1H POI</div><div class="chk-v" style="color:var(--warn)" id="chk-1h-v">—</div></div>
+      <div class="chk pend" id="chk-5m"><div class="chk-k">5M CHoCH</div><div class="chk-v" style="color:var(--warn)" id="chk-5m-v">⟳</div></div>
+      <div class="chk pend" id="chk-fvg"><div class="chk-k">FVG Fill</div><div class="chk-v" style="color:var(--warn)" id="chk-fvg-v">⟳</div></div>
+      <div class="chk pend" id="chk-ssl"><div class="chk-k">SSL Swept</div><div class="chk-v" style="color:var(--warn)" id="chk-ssl-v">⟳</div></div>
+      <div class="chk pend" id="chk-mss"><div class="chk-k">MSS</div><div class="chk-v" style="color:var(--warn)" id="chk-mss-v">⟳</div></div>
+    </div>
+    <div class="sig-banner sb-warn" id="sigBanner">
+      <div class="sb-icon">⚡</div>
+      <div class="sb-body">
+        <div class="sb-head" id="sigHead">Waiting for TradingView alerts...</div>
+        <div class="sb-sub" id="sigSub">Tap ⚙ Setup → connect server → configure TV alerts</div>
+      </div>
+      <div class="sb-score"><div class="score-lbl">SCORE</div><div class="score-val" id="scoreVal" style="color:var(--warn)">—</div></div>
+    </div>
+    <div class="tpsl">
+      <div class="tpsl-box tp-b">
+        <div style="font-size:8px;color:var(--t2);font-family:var(--mono);margin-bottom:3px">TAKE PROFIT</div>
+        <div class="tpsl-row"><span class="tpsl-k">TP1</span><span class="tpsl-v" style="color:var(--bull)" id="tp1">—</span></div>
+        <div class="tpsl-row"><span class="tpsl-k">TP2</span><span class="tpsl-v" style="color:var(--bull)" id="tp2">—</span></div>
+      </div>
+      <div class="tpsl-box sl-b">
+        <div style="font-size:8px;color:var(--t2);font-family:var(--mono);margin-bottom:3px">RISK</div>
+        <div class="tpsl-row"><span class="tpsl-k">SL</span><span class="tpsl-v" style="color:var(--bear)" id="slVal">—</span></div>
+        <div class="tpsl-row"><span class="tpsl-k">R:R</span><span class="tpsl-v" style="color:var(--warn)" id="rrVal">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OB LEVELS + ACTIVE SIGNAL -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div class="card">
+      <div class="card-title">OB Levels</div>
+      <div class="ob-list">
+        <div class="ob-row ob-pu"><span class="ob-k">1D OB Top</span><span class="ob-v" style="color:var(--purple)" id="ob-d1-top">—</span></div>
+        <div class="ob-row ob-pu"><span class="ob-k">1D OB Bot</span><span class="ob-v" style="color:var(--purple)" id="ob-d1-bot">—</span></div>
+        <div class="ob-row ob-bull"><span class="ob-k">Dem Top</span><span class="ob-v" style="color:var(--bull)" id="ob-dem-top">—</span></div>
+        <div class="ob-row ob-bull"><span class="ob-k">Dem Bot</span><span class="ob-v" style="color:var(--bull)" id="ob-dem-bot">—</span></div>
+        <div class="ob-row ob-bear"><span class="ob-k">Sup Top</span><span class="ob-v" style="color:var(--bear)" id="ob-sup-top">—</span></div>
+        <div class="ob-row ob-bear"><span class="ob-k">Sup Bot</span><span class="ob-v" style="color:var(--bear)" id="ob-sup-bot">—</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Active Signal</div>
+      <div id="activeSig" style="font-size:10px;font-family:var(--mono);color:var(--t3);text-align:center;padding:12px 0;line-height:1.8">No active<br>signal</div>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-row">
+    <div class="stat-box"><div class="stat-lbl">Today</div><div class="stat-num" style="color:var(--bull)" id="st-today">0</div><div class="stat-sub">signals</div></div>
+    <div class="stat-box"><div class="stat-lbl">Total</div><div class="stat-num" style="color:var(--info)" id="st-total">0</div><div class="stat-sub">all time</div></div>
+    <div class="stat-box"><div class="stat-lbl">L / S</div><div class="stat-num" id="st-ls" style="font-size:13px">0/0</div><div class="stat-sub">signals</div></div>
+    <div class="stat-box"><div class="stat-lbl">Server</div><div class="stat-num" id="st-srv" style="color:var(--bear);font-size:11px">OFFLINE</div><div class="stat-sub" id="st-sub">—</div></div>
+  </div>
+
+  <!-- ALERT FEED -->
+  <div class="alert-feed-wrap">
+    <div class="alert-feed-hdr">
+      <span>Live Alerts</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="feedCnt" style="color:var(--bull)">0</span>
+        <button class="cbtn cbtn-ghost" style="font-size:9px;padding:3px 8px" onclick="fireTest()">⚡ Test</button>
+      </div>
+    </div>
+    <div class="alert-feed" id="alertFeed">
+      <div class="empty-feed" id="emptyFeed">
+        No alerts yet<br>
+        <span style="color:var(--t3);font-size:9px">
+        ① Start server: <span style="color:var(--bull)">node server.js</span><br>
+        ② Tap ⚙ → paste WS URL → Connect<br>
+        ③ Copy webhook URL → TradingView alert
+        </span>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /content-scroll -->
+</div><!-- /app -->
+
+<!-- ══════════════════════════════
+     BOTTOM SHEET — SETUP
+══════════════════════════════ -->
+<div class="sheet-overlay hidden" id="sheetOverlay" onclick="hideSheet()"></div>
+<div class="bottom-sheet hidden" id="bottomSheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">
+    ⚙ Connect Bot Server
+    <button class="sheet-close" onclick="hideSheet()">✕</button>
+  </div>
+  <div class="sheet-body">
+
+    <!-- STEP 1 -->
+    <div class="step-card">
+      <div class="step-hdr">
+        <div class="step-num">1</div>
+        <div class="step-title">Start the server on your PC/Mac</div>
+      </div>
+      <div class="step-body">
+        Open terminal in your bot folder and run:<br>
+        <div class="step-cmd" onclick="copyText('node server.js','Command copied!')">
+          <span>node server.js</span>
+          <span class="step-cmd-copy">TAP TO COPY</span>
+        </div>
+        The server starts on port 4000 and <strong>automatically</strong> launches a Cloudflare tunnel.<br>
+        After ~5 seconds your terminal will print the URLs.
+      </div>
+      <div class="info-note">✅ No extra install needed — tunnel starts automatically</div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="step-card">
+      <div class="step-hdr">
+        <div class="step-num">2</div>
+        <div class="step-title">Connect this dashboard</div>
+      </div>
+      <div class="step-body">
+        Copy the <strong>WS URL</strong> from your terminal output:<br>
+        <div class="step-url">wss://xxxx.trycloudflare.com/ws</div>
+        Paste it here and tap Connect:
+      </div>
+      <input class="sheet-input" id="sheetWsInput" type="text" inputmode="url"
+        placeholder="wss://xxxx.trycloudflare.com/ws"
+        autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
+        oninput="document.getElementById('wsInput').value=this.value">
+      <button class="sheet-btn sheet-btn-primary" onclick="doConnectFromSheet()">
+        Connect Dashboard
+      </button>
+      <button class="sheet-btn sheet-btn-ghost" onclick="demoMode();hideSheet()">
+        Demo Mode (Live Price Only)
+      </button>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="step-card">
+      <div class="step-hdr">
+        <div class="step-num">3</div>
+        <div class="step-title">Set TradingView Webhook URL</div>
+      </div>
+      <div class="step-body">
+        Copy the <strong>Webhook URL</strong> from your terminal and paste in:<br>
+        <strong>TradingView → Alert → Notifications → ☑ Webhook URL</strong><br>
+        Format:
+        <div class="step-url">https://xxxx.trycloudflare.com/webhook?secret=sui_smc_2024</div>
+      </div>
+      <div class="info-warn">⚠ TradingView requires HTTPS (port 443) — the tunnel provides this automatically</div>
+    </div>
+
+    <!-- STEP 4 -->
+    <div class="step-card">
+      <div class="step-hdr">
+        <div class="step-num">4</div>
+        <div class="step-title">Add Pine Script to TradingView chart</div>
+      </div>
+      <div class="step-body">
+        Open <strong>SUI/USDT 5M</strong> chart in TradingView →<br>
+        Pine Editor → paste <strong>SUI_SMC_Bot.pine</strong> → Add to chart →<br>
+        Create alerts for each <strong>alertcondition</strong> (8 total)<br>
+        Use the same Webhook URL for all alerts.
+      </div>
+    </div>
+
+    <!-- CURRENT WEBHOOK URL -->
+    <div class="current-wh">
+      <div class="current-wh-lbl">Current Webhook URL</div>
+      <div class="current-wh-url" id="sheetWhUrl">Not connected yet — start server first</div>
+      <button class="sheet-btn sheet-btn-ghost" style="margin-top:8px;font-size:11px"
+        onclick="copyText(document.getElementById('whUrl').textContent,'Webhook URL copied!')">
+        📋 Copy Webhook URL
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════
+//  STATE
+// ═══════════════════════════════════
+let ws           = null;
+let wsUrl        = '';
+let currentPrice = 0;
+let openPrice24h = 0;
+let alertCount   = 0;
+let priceChart   = null;
+let chartTF      = '5M';
+let liveCandles  = [];
+let binWs        = null;
+
+// ═══════════════════════════════════
+//  BOTTOM SHEET
+// ═══════════════════════════════════
+function showSheet() {
+  document.getElementById('sheetOverlay').classList.remove('hidden');
+  document.getElementById('bottomSheet').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  // Pre-fill if we have a URL
+  if (wsUrl) document.getElementById('sheetWsInput').value = wsUrl;
+}
+function hideSheet() {
+  document.getElementById('sheetOverlay').classList.add('hidden');
+  document.getElementById('bottomSheet').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+// Swipe down to close
+let touchStartY = 0;
+document.getElementById('bottomSheet').addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; }, {passive:true});
+document.getElementById('bottomSheet').addEventListener('touchend', e => {
+  if (e.changedTouches[0].clientY - touchStartY > 80) hideSheet();
+}, {passive:true});
+
+// ═══════════════════════════════════
+//  TF CARD FILTER (mobile tabs)
+// ═══════════════════════════════════
+function showTF(which, btn) {
+  document.querySelectorAll('#tfTabRow .tf-tab-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  ['tf1D','tf1H','tf5M'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (which === 'all') { el.style.display = ''; }
+    else if (which === '1D' && id === 'tf1D') { el.style.display = ''; }
+    else if (which === '1H' && id === 'tf1H') { el.style.display = ''; }
+    else if (which === '5M' && id === 'tf5M') { el.style.display = ''; }
+    else if (which !== 'all') { el.style.display = 'none'; }
+  });
+}
+
+// ═══════════════════════════════════
+//  CONNECTION BANNER
+// ═══════════════════════════════════
+function setBanner(status, sub) {
+  const ban   = document.getElementById('connBanner');
+  const icon  = document.getElementById('cbIcon');
+  const title = document.getElementById('cbTitle');
+  const btn   = document.getElementById('connBtn');
+  const dot   = document.getElementById('connDot');
+  const srv   = document.getElementById('st-srv');
+  const tksrv = document.getElementById('tk-sig'); // reuse
+
+  ban.className = `conn-banner cb-${status}`;
+  if (status === 'online') {
+    icon.textContent  = '🟢'; title.textContent = 'Server Connected ✓';
+    btn.textContent   = 'Disconnect'; btn.onclick = doDisconnect; btn.className = 'cbtn cbtn-red';
+    dot.className     = 'dot dot-g';
+    srv.textContent   = 'ONLINE'; srv.style.color = 'var(--bull)';
+    document.getElementById('st-sub').textContent = (wsUrl||'').replace('wss://','').slice(0,20)+'…';
+    setStep('ws-step2','done');
+  } else if (status === 'connecting') {
+    icon.textContent  = '🟡'; title.textContent = 'Connecting...';
+    btn.textContent   = 'Cancel'; btn.onclick = doDisconnect; btn.className = 'cbtn cbtn-ghost';
+    dot.className     = 'dot dot-y';
+    srv.textContent   = '…'; srv.style.color = 'var(--warn)';
+  } else if (status === 'demo') {
+    icon.textContent  = '🟡'; title.textContent = 'Demo Mode — Live Binance price';
+    btn.textContent   = 'Connect'; btn.onclick = doConnect; btn.className = 'cbtn cbtn-primary';
+    dot.className     = 'dot dot-y';
+    srv.textContent   = 'DEMO'; srv.style.color = 'var(--warn)';
+  } else {
+    icon.textContent  = '🔴'; title.textContent = 'Not Connected';
+    btn.textContent   = 'Connect'; btn.onclick = doConnect; btn.className = 'cbtn cbtn-primary';
+    dot.className     = 'dot dot-r';
+    srv.textContent   = 'OFFLINE'; srv.style.color = 'var(--bear)';
+    document.getElementById('st-sub').textContent = '—';
+  }
+}
+
+function setStep(id, state) {
+  const el = document.getElementById(id);
+  if (el) el.className = `wh-step ${state}`;
+}
+
+// ═══════════════════════════════════
+//  WEBHOOK BANNER
+// ═══════════════════════════════════
+function showWebhookBanner(url) {
+  if (!url) return;
+  document.getElementById('whBanner').classList.remove('hidden');
+  document.getElementById('whUrl').textContent  = url;
+  document.getElementById('sheetWhUrl').textContent = url;
+  toast('🌐 Webhook URL ready — tap to copy', 'bull');
+}
+
+// ═══════════════════════════════════
+//  WEBSOCKET
+// ═══════════════════════════════════
+function doConnect() {
+  const val = document.getElementById('wsInput').value.trim();
+  if (!val) { showSheet(); return; }
+  wsUrl = val.startsWith('ws') ? val : 'wss://' + val.replace(/\/ws\/?$/,'') + '/ws';
+  document.getElementById('wsInput').value = wsUrl;
+  connectWS();
+}
+
+function doConnectFromSheet() {
+  const val = document.getElementById('sheetWsInput').value.trim();
+  if (!val) { toast('Paste the WS URL from your server terminal', 'warn'); return; }
+  document.getElementById('wsInput').value = val;
+  hideSheet();
+  doConnect();
+}
+
+function doDisconnect() {
+  if (ws) { try{ws.close();}catch(e){} ws=null; }
+  setBanner('offline');
+}
+
+function connectWS() {
+  if (ws) { try{ws.close();}catch(e){} ws=null; }
+  setBanner('connecting');
+  try {
+    ws = new WebSocket(wsUrl);
+    ws.onopen = () => {
+      setBanner('online');
+      toast('✅ Server connected', 'bull');
+    };
+    ws.onmessage = e => {
+      try {
+        const msg = JSON.parse(e.data);
+        if      (msg.event==='SNAPSHOT')    { applyState(msg.data.state); (msg.data.alerts||[]).reverse().forEach(a=>addAlert(a,false)); if(msg.data.webhookUrl) showWebhookBanner(msg.data.webhookUrl); }
+        else if (msg.event==='ALERT')        applyAlert(msg.data);
+        else if (msg.event==='STATE_UPDATE') applyState(msg.data.state);
+        else if (msg.event==='HEARTBEAT')    applyState(msg.data.state);
+        else if (msg.event==='TUNNEL_URL') { showWebhookBanner(msg.data.webhookUrl); if(msg.data.wsUrl) { document.getElementById('wsInput').value=msg.data.wsUrl; document.getElementById('sheetWsInput').value=msg.data.wsUrl; } }
+      } catch{}
+    };
+    ws.onclose = () => { setBanner('offline'); ws=null; };
+    ws.onerror = () => { setBanner('offline'); };
+  } catch { setBanner('offline'); }
+}
+
+// ═══════════════════════════════════
+//  DEMO MODE
+// ═══════════════════════════════════
+function demoMode() {
+  setBanner('demo');
+  setTimeout(()=>fireDemoAlert(), 5000);
+  setTimeout(()=>fireDemoAlert(), 15000);
+}
+function fireDemoAlert() {
+  const p=currentPrice||3.824, r=p*.013;
+  applyAlert({ id:Math.random().toString(36).slice(2), at:new Date().toISOString(),
+    symbol:'SUIUSDT', action:'LONG', type:'ENTRY', tf:'5M',
+    price:p, sl:p-r, tp1:p+r*1.5, tp2:p+r*3, rr:'2.8',
+    d1Bias:'BULLISH', d1ObTop:p*.975, d1ObBot:p*.960,
+    h1Zone:'DEMAND', h1DemTop:p*1.003, h1DemBot:p*.995,
+    h1SupTop:p*1.06, h1SupBot:p*1.052, m5Signal:'CHoCH_BULL' });
+}
+
+// ═══════════════════════════════════
+//  STATE → UI
+// ═══════════════════════════════════
+const f = v => v ? '$'+parseFloat(v).toFixed(4) : '—';
+
+function applyState(s) {
+  if (!s) return;
+  if (s.lastPrice) priceTick(s.lastPrice);
+  if (s.d1) render1D(s.d1);
+  if (s.h1) render1H(s.h1);
+  if (s.m5) render5M(s.m5);
+  if (s.stats) {
+    set('st-today',   s.stats.today  ||0);
+    set('st-total',   s.stats.total  ||0);
+    set('st-ls',      `${s.stats.longs||0}/${s.stats.shorts||0}`);
+    set('tk-alerts',  s.stats.today  ||0);
+    set('tk-alerts2', s.stats.today  ||0);
+  }
+  if (s.activeSignal) renderSig(s.activeSignal);
+  if (s.connection && s.connection.webhookUrl) showWebhookBanner(s.connection.webhookUrl);
+}
+
+function applyAlert(a) {
+  if (a.price) priceTick(a.price);
+  addAlert(a, true);
+  toast(a);
+  if (a.d1Bias  || a.d1ObTop)  render1D({ bias:a.d1Bias,  obTop:a.d1ObTop,  obBot:a.d1ObBot });
+  if (a.h1Zone  || a.h1DemTop) render1H({ zone:a.h1Zone,  demTop:a.h1DemTop,demBot:a.h1DemBot,supTop:a.h1SupTop,supBot:a.h1SupBot });
+  if (a.m5Signal) render5M({ signal:a.m5Signal });
+
+  const bull=a.action==='LONG', bear=a.action==='SHORT';
+  if ((bull||bear) && a.type==='ENTRY') {
+    document.getElementById('sigBanner').className=`sig-banner ${bull?'sb-bull':'sb-bear'}`;
+    set('sigHead', `🔔 ${a.action} ENTRY · ${a.m5Signal||'Confirmed'}`);
+    set('sigSub',  `Entry:${f(a.price)} TP1:${f(a.tp1)} SL:${f(a.sl)}\n1D:${a.d1Bias||'—'} 1H:${a.h1Zone||'—'}`);
+    set('scoreVal','96%'); document.getElementById('scoreVal').style.color=bull?'var(--bull)':'var(--bear)';
+    set('sigStatus','🟢 ENTRY'); document.getElementById('sigStatus').style.color=bull?'var(--bull)':'var(--bear)';
+    set('tp1',f(a.tp1)); set('tp2',f(a.tp2)); set('slVal',f(a.sl)); set('rrVal','1:'+a.rr);
+    chk('chk-1d', a.d1Bias==='BULLISH'?'pass':'fail', a.d1Bias==='BULLISH'?'✓ Bullish':'✗ Bearish', a.d1Bias==='BULLISH'?'var(--bull)':'var(--bear)');
+    chk('chk-1h', 'pass', `✓ ${a.h1Zone||'POI'}`, 'var(--bull)');
+    chk('chk-5m', 'pass', `✓ ${a.m5Signal||'CHoCH'}`, 'var(--bull)');
+    chk('chk-fvg','pass', '✓ FVG', 'var(--bull)');
+    chk('chk-ssl','pass', '✓ SSL', 'var(--bull)');
+    chk('chk-mss', a.m5Signal&&a.m5Signal.includes('MSS')?'pass':'pend', a.m5Signal&&a.m5Signal.includes('MSS')?'✓ MSS':'⟳', 'var(--warn)');
+    renderSig({ dir:a.action, entry:a.price, sl:a.sl, tp1:a.tp1, tp2:a.tp2, rr:a.rr, at:a.at });
+    setStep('ws-step4','done');
+  } else if (a.action.includes('WATCH')) {
+    document.getElementById('sigBanner').className='sig-banner sb-warn';
+    set('sigHead',`⚡ ${a.action} · Near Entry`);
+    set('sigSub', `${f(a.price)} | 1D:${a.d1Bias||'—'} 1H:${a.h1Zone||'—'} | Awaiting 5M`);
+    set('scoreVal','75%'); document.getElementById('scoreVal').style.color='var(--warn)';
+  }
+  alertCount++;
+  set('feedCnt',   alertCount);
+  set('tk-alerts',  alertCount);
+  set('tk-alerts2', alertCount);
+}
+
+// ═══════════════════════════════════
+//  TF RENDERS
+// ═══════════════════════════════════
+function render1D(d) {
+  if (!d) return;
+  const bias=d.bias||'—', bull=bias==='BULLISH', bear=bias==='BEARISH';
+  document.getElementById('tf1D').className=`tf-card ${bull?'tf-bull':bear?'tf-bear':'tf-warn'}`;
+  const b=document.getElementById('tf1D-badge'); b.textContent=bias; b.className=`badge ${bull?'b-bull':bear?'b-bear':'b-warn'}`;
+  const dir=document.getElementById('tf1D-dir'); dir.textContent=bull?'▲ BULLISH':bear?'▼ BEARISH':'→ NEUTRAL'; dir.style.color=bull?'var(--bull)':bear?'var(--bear)':'var(--warn)';
+  set('d1-struct', bull?'HH/HL ▲':bear?'LH/LL ▼':'Ranging');
+  set('d1-ob-top', f(d.obTop)); set('d1-ob-bot', f(d.obBot));
+  set('d1-zone',   bull?'Discount ↓':bear?'Premium ↑':'—');
+  set('d1-bias',   bull?'LONG ↑':bear?'SHORT ↓':'—');
+  set('ob-d1-top', f(d.obTop)); set('ob-d1-bot', f(d.obBot));
+  set('tk-bias', bias); set('tk-bias2', bias);
+  chk('chk-1d', bull?'pass':bear?'fail':'pend', bull?'✓ Bull':bear?'✗ Bear':'—', bull?'var(--bull)':bear?'var(--bear)':'var(--warn)');
+}
+
+function render1H(h) {
+  if (!h) return;
+  const zone=h.zone||'—', bull=zone==='DEMAND', bear=zone==='SUPPLY';
+  document.getElementById('tf1H').className=`tf-card ${bull?'tf-bull':bear?'tf-bear':'tf-warn'}`;
+  const b=document.getElementById('tf1H-badge'); b.textContent=zone; b.className=`badge ${bull?'b-bull':bear?'b-bear':'b-warn'}`;
+  const dir=document.getElementById('tf1H-dir'); dir.textContent=bull?'▲ DEMAND OB':bear?'▼ SUPPLY OB':'→ RANGING'; dir.style.color=bull?'var(--bull)':bear?'var(--bear)':'var(--warn)';
+  set('h1-dem-top',f(h.demTop)); set('h1-dem-bot',f(h.demBot));
+  set('h1-sup-top',f(h.supTop)); set('h1-sup-bot',f(h.supBot));
+  set('h1-zone-row',zone);
+  set('ob-dem-top',f(h.demTop)); set('ob-dem-bot',f(h.demBot));
+  set('ob-sup-top',f(h.supTop)); set('ob-sup-bot',f(h.supBot));
+  set('tk-zone',zone);
+  chk('chk-1h', bull||bear?'pass':'pend', bull?'✓ Demand':bear?'✓ Supply':'⟳ Ranging', bull||bear?'var(--bull)':'var(--warn)');
+}
+
+function render5M(m) {
+  if (!m) return;
+  const sig=m.signal||'WATCHING', bull=sig.includes('BULL'), bear=sig.includes('BEAR');
+  document.getElementById('tf5M').className=`tf-card ${bull?'tf-bull':bear?'tf-bear':'tf-warn'}`;
+  const b=document.getElementById('tf5M-badge'); b.textContent=sig; b.className=`badge ${bull?'b-bull':bear?'b-bear':'b-warn'}${bull||bear?'':' blink'}`;
+  const dir=document.getElementById('tf5M-dir'); dir.textContent=bull?'▲ BULL CHoCH':bear?'▼ BEAR CHoCH':'→ AWAITING'; dir.style.color=bull?'var(--bull)':bear?'var(--bear)':'var(--warn)';
+  set('m5-sig',   sig);
+  set('m5-choch', bull||bear?(sig.includes('MSS')?'MSS ✓':'CHoCH ✓'):'PENDING');
+  set('tk-sig',   sig.length>6?sig.slice(0,6):sig);
+  chk('chk-5m', bull||bear?'pass':'pend', bull?'✓ CHoCH B':bear?'✓ CHoCH S':'⟳', bull?'var(--bull)':bear?'var(--bear)':'var(--warn)');
+}
+
+function renderSig(s) {
+  const bull=s.dir==='LONG', time=s.at?new Date(s.at).toLocaleTimeString():'';
+  set('m5-entry',f(s.entry)); set('m5-sl',f(s.sl));
+  document.getElementById('activeSig').innerHTML=`
+    <div style="font-size:12px;font-weight:600;color:${bull?'var(--bull)':'var(--bear)'};margin-bottom:5px">${s.dir}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;font-size:9px;font-family:var(--mono)">
+      <span style="color:var(--t3)">Entry</span><span style="color:${bull?'var(--bull)':'var(--bear)'}">${f(s.entry)}</span>
+      <span style="color:var(--t3)">TP1</span><span style="color:var(--bull)">${f(s.tp1)}</span>
+      <span style="color:var(--t3)">TP2</span><span style="color:var(--bull)">${f(s.tp2)}</span>
+      <span style="color:var(--t3)">SL</span><span style="color:var(--bear)">${f(s.sl)}</span>
+      <span style="color:var(--t3)">R:R</span><span style="color:var(--warn)">1:${s.rr||'—'}</span>
+    </div>
+    <div style="font-size:8px;color:var(--t3);font-family:var(--mono);margin-top:5px">${time}</div>`;
+}
+
+// ═══════════════════════════════════
+//  BINANCE LIVE PRICE
+// ═══════════════════════════════════
+function startBinance() {
+  if (binWs) { try{binWs.close();}catch(e){} }
+  binWs = new WebSocket('wss://stream.binance.com:9443/stream?streams=suiusdt@miniTicker/suiusdt@kline_5m');
+  binWs.onopen  = () => { set('binStat','📡 LIVE'); document.getElementById('binStat').style.color='var(--bull)'; };
+  binWs.onclose = () => { set('binStat','📡 …'); document.getElementById('binStat').style.color='var(--warn)'; setTimeout(startBinance,4000); };
+  binWs.onerror = ()=>{};
+  binWs.onmessage = e => {
+    try {
+      const msg=JSON.parse(e.data), d=msg.data, stream=msg.stream||'';
+      if (stream.includes('miniTicker')) { currentPrice=parseFloat(d.c); openPrice24h=parseFloat(d.o); priceTick(currentPrice,parseFloat(d.o),parseFloat(d.h),parseFloat(d.l),parseFloat(d.v)); }
+      if (stream.includes('kline')) {
+        const k=d.k, c={t:k.t,o:parseFloat(k.o),h:parseFloat(k.h),l:parseFloat(k.l),c:parseFloat(k.c),v:parseFloat(k.v)};
+        if (liveCandles.length && liveCandles[liveCandles.length-1].t===c.t) liveCandles[liveCandles.length-1]=c;
+        else { liveCandles.push(c); if(liveCandles.length>120) liveCandles.shift(); }
+        if (chartTF==='5M') buildChart(liveCandles,'5M');
+      }
+    } catch{}
+  };
+}
+
+function priceTick(price, open24, high24, low24, vol24) {
+  currentPrice=parseFloat(price)||currentPrice;
+  const pEl=document.getElementById('topPrice'), cEl=document.getElementById('topChg');
+  pEl.textContent='$'+currentPrice.toFixed(4);
+  const base=open24||openPrice24h||currentPrice, pct=base>0?((currentPrice-base)/base*100):0;
+  cEl.textContent=(pct>=0?'+':'')+pct.toFixed(2)+'%';
+  cEl.className='pchg '+(pct>=0?'b-bull':'b-bear');
+  pEl.style.color=pct>.3?'var(--bull)':pct<-.3?'var(--bear)':'var(--t1)';
+  if (high24) set('tk-high','$'+parseFloat(high24).toFixed(4));
+  if (low24)  set('tk-low', '$'+parseFloat(low24).toFixed(4));
+  if (vol24) { const v='$'+(vol24/1e6).toFixed(1)+'M'; set('tk-vol',v); set('tk-vol2',v); }
+  set('tk-price','$'+currentPrice.toFixed(4)); set('tk-price2','$'+currentPrice.toFixed(4));
+  set('m5-entry','$'+currentPrice.toFixed(4));
+}
+
+// ═══════════════════════════════════
+//  CHART
+// ═══════════════════════════════════
+function fetchCandles(tf) {
+  const map={'5M':'5m','1H':'1h','1D':'1d'};
+  fetch(`https://api.binance.com/api/v3/klines?symbol=SUIUSDT&interval=${map[tf]}&limit=60`)
+    .then(r=>r.json())
+    .then(data=>{ const c=data.map(k=>({t:k[0],o:parseFloat(k[1]),h:parseFloat(k[2]),l:parseFloat(k[3]),c:parseFloat(k[4]),v:parseFloat(k[5])})); if(tf==='5M') liveCandles=c; buildChart(c,tf); })
+    .catch(()=>{});
+}
+
+function buildChart(candles,tf) {
+  if (!candles||!candles.length) return;
+  const sl=candles.slice(-40), closes=sl.map(c=>c.c);
+  const colors=sl.map((c,i)=>i===0?'#4a9eff':c.c>=c.o?'#00e5a8':'#ff3d5a');
+  const labels=sl.map(c=>{ const d=new Date(c.t); return tf==='1D'?d.toLocaleDateString('en',{month:'short',day:'numeric'}):d.toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'}); });
+  if (priceChart) priceChart.destroy();
+  const ctx=document.getElementById('priceChart').getContext('2d');
+  priceChart=new Chart(ctx,{
+    type:'bar',
+    data:{labels,datasets:[{data:closes,backgroundColor:colors,borderColor:colors,borderWidth:1,barThickness:tf==='1D'?10:6}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'$'+c.parsed.y.toFixed(4)}}},
+      scales:{
+        x:{ticks:{color:'#445566',font:{size:8,family:'JetBrains Mono'},maxTicksLimit:8},grid:{color:'rgba(255,255,255,.03)'}},
+        y:{ticks:{color:'#445566',font:{size:8,family:'JetBrains Mono'},callback:v=>'$'+v.toFixed(3)},grid:{color:'rgba(255,255,255,.03)'},position:'right'}
+      }
+    }
+  });
+}
+
+function switchChart(el,tf) {
+  document.querySelectorAll('.chart-wrap .tf-tab-btn').forEach(t=>t.classList.remove('on'));
+  el.classList.add('on'); chartTF=tf; fetchCandles(tf);
+}
+
+// ═══════════════════════════════════
+//  ALERT FEED
+// ═══════════════════════════════════
+function addAlert(a, isNew) {
+  const feed=document.getElementById('alertFeed'), empty=document.getElementById('emptyFeed');
+  if (empty) empty.remove();
+  const action=(a.action||'INFO').toUpperCase();
+  const cls=action==='LONG'?'a-long':action==='SHORT'?'a-short':action.includes('WATCH')?'a-watch':'a-info';
+  const time=a.at?new Date(a.at).toLocaleTimeString():new Date().toLocaleTimeString();
+  const div=document.createElement('div');
+  div.className=`alert-item ${cls}${isNew?' new':''}`;
+  div.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+      <span class="a-action">${action} ${a.type||''}</span>
+      <span class="a-time">${time}</span>
+    </div>
+    <div class="a-price">${a.price?'$'+parseFloat(a.price).toFixed(4):'—'}</div>
+    <div class="a-meta">
+      <span>1D:${a.d1Bias||'—'}</span><span>1H:${a.h1Zone||'—'}</span>
+      <span>5M:${a.m5Signal||'—'}</span>${a.rr?`<span>R:R 1:${a.rr}</span>`:''}
+    </div>`;
+  feed.insertBefore(div,feed.firstChild);
+  while(feed.children.length>50) feed.removeChild(feed.lastChild);
+}
+
+// ═══════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════
+function toast(a, type) {
+  let head,body,cls;
+  if (typeof a==='string') { head=a; body=''; cls=type||'info'; }
+  else {
+    const ac=(a.action||'').toUpperCase();
+    cls=ac==='LONG'?'bull':ac==='SHORT'?'bear':'warn';
+    const ico=ac==='LONG'?'▲ ':ac==='SHORT'?'▼ ':'⚡ ';
+    head=ico+ac+(a.type?' · '+a.type:'');
+    body=a.price&&parseFloat(a.price)>0?'$'+parseFloat(a.price).toFixed(4)+(a.m5Signal?' · '+a.m5Signal:''):'';
+  }
+  const c=document.getElementById('toastWrap'), div=document.createElement('div');
+  div.className=`toast t-${cls}`;
+  div.innerHTML=`<div class="toast-head">${head}</div>${body?`<div class="toast-body">${body}</div>`:''}`;
+  c.appendChild(div);
+  // Tap to dismiss
+  div.addEventListener('click',()=>div.remove());
+  setTimeout(()=>{ div.style.opacity='0'; div.style.transition='.3s'; setTimeout(()=>div.remove(),320); },3800);
+}
+
+// ═══════════════════════════════════
+//  TEST ALERT
+// ═══════════════════════════════════
+function fireTest() {
+  if (ws && ws.readyState===WebSocket.OPEN) {
+    const base=wsUrl.replace('wss://','https://').replace('ws://','http://').replace('/ws','');
+    fetch(base+'/test',{method:'POST'}).then(r=>r.json()).catch(()=>fireDemoAlert());
+  } else { fireDemoAlert(); }
+}
+
+// ═══════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════
+function set(id,val) { const el=document.getElementById(id); if(el) el.textContent=val; }
+function chk(id,state,text,color) {
+  const el=document.getElementById(id); if(!el) return;
+  el.className='chk '+state;
+  const v=document.getElementById(id+'-v')||el.querySelector('.chk-v');
+  if(v){v.textContent=text;v.style.color=color;}
+}
+function copyText(text, label) {
+  if (!text || text==='—') return;
+  navigator.clipboard.writeText(text)
+    .then(()=>toast(label||'Copied!','bull'))
+    .catch(()=>{ const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); toast(label||'Copied!','bull'); });
+}
+
+// ═══════════════════════════════════
+//  INIT
+// ═══════════════════════════════════
+startBinance();
+fetchCandles('5M');
+</script>
+</body>
+</html>
