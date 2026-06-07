@@ -1,1 +1,8 @@
+node_modules
+.git
+server.js
+package.json
+package-lock.json
+*.pine
+*.pdf
 
