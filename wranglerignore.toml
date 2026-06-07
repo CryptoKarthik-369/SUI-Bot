@@ -1,1 +1,18 @@
+name = "sui-smc-bot"
+compatibility_data = "2024-01-01"
 
+[
+assets
+]
+directory = "."
+inculde = ["indux.html"]
+exculde = [
+"node_module/**",
+"server.js",
+"package.json",
+"package-lock.json",
+"*.pine",
+"*.pdf",
+".toml",
+".github/**"
+]
